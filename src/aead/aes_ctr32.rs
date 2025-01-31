@@ -36,14 +36,50 @@ use aes::EncryptCtr32 as _;
 use cpu::GetFeature as _;
 
 #[derive(Clone)]
-pub(super) struct Key(DynKey);
+pub struct Key(DynKey);
 
 impl Key {
-    pub(super) fn new(
-        key: aes::KeyBytes,
-        cpu_features: cpu::Features,
-    ) -> Result<Self, error::Unspecified> {
+    pub fn aes128(key_bytes: &[u8]) -> Result<Self, error::Unspecified> {
+        let cpu_features = cpu::features();
+        let key = key_bytes.try_into().map_err(|_| error::Unspecified)?;
+        let key = aes::KeyBytes::AES_128(key);
         Ok(Self(DynKey::new(key, cpu_features)?))
+    }
+
+    pub fn aes256(key_bytes: &[u8]) -> Result<Self, error::Unspecified> {
+        let cpu_features = cpu::features();
+        let key = key_bytes.try_into().map_err(|_| error::Unspecified)?;
+        let key = aes::KeyBytes::AES_256(key);
+        Ok(Self(DynKey::new(key, cpu_features)?))
+    }
+
+    #[inline]
+    pub fn open_in_place<'in_out>(
+        &mut self,
+        nonce: Nonce,
+        in_out: &'in_out mut [u8],
+    ) -> Result<&'in_out mut [u8], error::Unspecified> {
+        self.open_within(nonce, in_out, 0..)
+    }
+
+    #[inline]
+    pub fn open_within<'in_out>(
+        &mut self,
+        nonce: Nonce,
+        in_out: &'in_out mut [u8],
+        ciphertext_and_tag: RangeFrom<usize>,
+    ) -> Result<&'in_out mut [u8], error::Unspecified> {
+        let ciphertext_len = in_out
+            .get(ciphertext_and_tag.clone())
+            .ok_or(error::Unspecified)?
+            .len();
+        open(self, nonce, in_out, ciphertext_and_tag)?;
+        Ok(&mut in_out[..ciphertext_len])
+    }
+
+    #[inline]
+    pub fn seal_in_place(&self, nonce: Nonce, in_out: &mut [u8]) -> Result<(), error::Unspecified> {
+        seal(self, nonce, in_out)
     }
 }
 
