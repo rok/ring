@@ -169,6 +169,7 @@ const TAG_LEN: usize = 16;
 pub const MAX_TAG_LEN: usize = TAG_LEN;
 
 mod aes;
+mod aes_ctr32;
 mod aes_gcm;
 mod algorithm;
 mod chacha;
