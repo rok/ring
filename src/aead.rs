@@ -209,6 +209,7 @@ fn open_within<'o>(
 }
 
 mod aes;
+mod aes_ctr32;
 mod aes_gcm;
 mod algorithm;
 mod chacha;
