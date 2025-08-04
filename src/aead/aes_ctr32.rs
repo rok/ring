@@ -13,14 +13,15 @@
 // CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 use super::{
-    aes::{self, Counter, Overlapping, OverlappingPartialBlock, BLOCK_LEN, ZERO_BLOCK},
+    aes::{self, Counter, OverlappingPartialBlock, BLOCK_LEN, ZERO_BLOCK},
+    Overlapping,
     overlapping::IndexError,
     Nonce,
 };
 use crate::{
     cpu,
     error::{self, InputTooLongError},
-    polyfill::{slice, sliceutil::overwrite_at_start},
+    polyfill::sliceutil::overwrite_at_start,
 };
 use core::ops::RangeFrom;
 
@@ -111,7 +112,7 @@ impl DynKey {
             target_arch = "x86_64"
         ))]
         if let Some(aes) = cpu_features.get_feature() {
-            let aes_key = aes::hw::Key::new(key, aes, cpu_features.get_feature())?;
+            let aes_key = aes::hw::Key::new(key, aes, cpu_features.get_feature());
             return Ok(Self::AesHw(aes_key));
         }
 
@@ -122,13 +123,13 @@ impl DynKey {
             target_arch = "x86_64"
         ))]
         if let Some(aes) = cpu_features.get_feature() {
-            let aes_key = aes::vp::Key::new(key, aes)?;
+            let aes_key = aes::vp::Key::new(key, aes);
             return Ok(Self::Simd(aes_key));
         }
 
         let _ = cpu_features;
 
-        let aes_key = aes::fallback::Key::new(key)?;
+        let aes_key = aes::fallback::Key::new(key);
         Ok(Self::Fallback(aes_key))
     }
 }
@@ -150,7 +151,7 @@ pub(super) fn seal(
             target_arch = "x86_64"
         ))]
         DynKey::AesHw(aes_key) => {
-            let (mut whole, remainder) = slice::as_chunks_mut::<_, BLOCK_LEN>(in_out);
+            let (whole, remainder) = in_out.as_chunks_mut::<BLOCK_LEN>();
             aes_key.ctr32_encrypt_within(whole.as_flattened_mut().into(), &mut ctr);
             let remainder = OverlappingPartialBlock::new(remainder.into())
                 .unwrap_or_else(|InputTooLongError { .. }| unreachable!());
@@ -190,9 +191,9 @@ fn seal_strided<A: aes::EncryptBlock + aes::EncryptCtr32>(
     in_out: &mut [u8],
     mut ctr: Counter,
 ) -> Result<(), error::Unspecified> {
-    let (mut whole, remainder) = slice::as_chunks_mut::<_, BLOCK_LEN>(in_out);
+    let (whole, remainder) = in_out.as_chunks_mut::<BLOCK_LEN>();
 
-    for mut chunk in whole.chunks_mut::<CHUNK_BLOCKS>() {
+    for chunk in whole.chunks_mut(CHUNK_BLOCKS) {
         aes_key.ctr32_encrypt_within(chunk.as_flattened_mut().into(), &mut ctr);
     }
 
@@ -236,7 +237,7 @@ pub(super) fn open(
         DynKey::AesHw(aes_key) => {
             let in_out =
                 Overlapping::new(in_out_slice, src.clone()).map_err(error::erase::<IndexError>)?;
-            let (whole, _) = slice::as_chunks::<_, BLOCK_LEN>(in_out.input());
+            let (whole, _) = in_out.input().as_chunks::<BLOCK_LEN>();
             let whole_len = whole.as_flattened().len();
 
             // Decrypt any remaining whole blocks.
@@ -314,7 +315,7 @@ fn open_strided<A: aes::EncryptBlock + aes::EncryptCtr32>(
             }
 
             let ciphertext = &in_out_slice[input..][..chunk_len];
-            let (ciphertext, leftover) = slice::as_chunks::<_, BLOCK_LEN>(ciphertext);
+            let (ciphertext, leftover) = ciphertext.as_chunks::<BLOCK_LEN>();
             debug_assert_eq!(leftover.len(), 0);
             if ciphertext.is_empty() {
                 break;
